@@ -1,69 +1,134 @@
-# Claude Code Template
+# NFS Protocol Fuzzer for boofuzz
 
-![Spellbook](spellbook.png)
+A boofuzz-based protocol fuzzer for NFS (Network File System) servers, targeting NFSv3 implementations.
 
-A GitHub template repository containing reusable Claude Code skills and commands.
+## Overview
+
+This fuzzer provides:
+- **Sun RPC primitives** - Reusable building blocks for any Sun RPC-based protocol
+- **NFSv3 procedure definitions** - All 22 NFSv3 procedures defined per RFC 1813
+- **Example fuzzer script** - Ready-to-use CLI for fuzzing NFS servers
+
+## Installation
+
+```bash
+pip install boofuzz
+```
 
 ## Usage
 
-### Creating a New Project
+```bash
+# Basic usage - fuzz stateless procedures
+python examples/nfs3.py -t 192.168.1.100
 
-1. Click **"Use this template"** on GitHub
-2. Create your new repository
-3. Your project automatically includes:
-   - Skills in `.claude/skills/`
-   - Commands in `.claude/commands/`
+# Fuzz specific procedures
+python examples/nfs3.py -t 192.168.1.100 --procedures NULL,GETATTR,LOOKUP
 
-### Available Commands
+# Fuzz all procedures
+python examples/nfs3.py -t 192.168.1.100 --all-procedures
 
-| Command | Description |
-|---------|-------------|
-| `/commit` | Create a well-crafted git commit with conventional format |
-| `/publish` | Run `dotnet publish -c release` |
-| `/push` | Commit pending changes and push to remote |
-
-### Available Skills
-
-| Skill | Description |
-|-------|-------------|
-| **BrowserBridge** | Real-time browser debugging via WebSocket bridge |
-| **Creating Skills** | Guide for creating new skill documents |
-| **CSharpener** | C# static analysis for call graphs and unused code |
-| **Databases** | RDBMS patterns for DuckDB, MySQL, PostgreSQL, SQL Server |
-| **Dotnet 8 to 9** | .NET migration guide |
-| **Elasticsearch** | ES 5.2 operations - search, bulk, scroll, aliases |
-| **Email** | Email handling patterns |
-| **Image Files** | ImageMagick command-line operations |
-| **JSharpener** | JavaScript/TypeScript static analysis |
-| **Logging** | UTF-8 file logging with date-based filenames |
-| **Parquet Files** | Creating Parquet files in C# |
-| **PythonJson** | Python JSON I/O patterns |
-| **Rust** | Rust development patterns and project setup |
-| **SharePoint** | SharePoint integration |
-| **Web Frontend** | React + Tailwind + shadcn/ui artifacts |
-
-## Structure
-
-```
-your-project/
-├── .claude/
-│   ├── commands/
-│   │   ├── commit.md
-│   │   ├── publish.md
-│   │   └── push.md
-│   └── skills/
-│       ├── Databases/
-│       ├── Elasticsearch/
-│       └── ...
-├── README.md
-└── spellbook.png
+# Test connectivity only
+python examples/nfs3.py -t 192.168.1.100 --test-connection
 ```
 
-## How Skills Work
+## Test Targets
 
-Skills are markdown files that teach Claude domain-specific patterns. They're loaded automatically when relevant or can be explicitly invoked.
+### nfs-ganesha (Recommended for testing)
 
-## Source
+```bash
+# Docker
+docker run --rm -p 2049:2049 -v /tmp/nfs:/export erichough/nfs-server
 
-This template is maintained at:
-- https://github.com/lawless-m/claude-skills
+# Or install locally
+sudo apt install nfs-ganesha nfs-ganesha-vfs
+```
+
+### Linux NFSD
+
+```bash
+sudo apt install nfs-kernel-server
+echo "/tmp/nfs-test *(rw,sync,no_subtree_check)" | sudo tee -a /etc/exports
+sudo exportfs -ra
+sudo systemctl start nfs-server
+```
+
+### Building with AddressSanitizer
+
+For memory bug detection, build targets with ASAN:
+
+```bash
+export CFLAGS="-fsanitize=address -g"
+export LDFLAGS="-fsanitize=address"
+# Then build from source
+```
+
+## Project Structure
+
+```
+nfs-fuzzer/
+├── request_definitions/
+│   ├── __init__.py      # Package exports
+│   ├── sunrpc.py        # Sun RPC primitives (RFC 5531)
+│   └── nfs3.py          # NFSv3 procedures (RFC 1813)
+├── examples/
+│   └── nfs3.py          # Example fuzzer with CLI
+└── README.md
+```
+
+## Implemented Procedures
+
+| Procedure | Number | Description |
+|-----------|--------|-------------|
+| NULL | 0 | Connectivity test |
+| GETATTR | 1 | Get file attributes |
+| LOOKUP | 3 | Look up filename |
+| ACCESS | 4 | Check access permissions |
+| READLINK | 5 | Read symbolic link |
+| READ | 6 | Read file data |
+| WRITE | 7 | Write file data |
+| CREATE | 8 | Create file |
+| MKDIR | 9 | Create directory |
+| REMOVE | 12 | Remove file |
+| RMDIR | 13 | Remove directory |
+| RENAME | 14 | Rename file/directory |
+| READDIR | 16 | Read directory entries |
+| READDIRPLUS | 17 | Read directory with attributes |
+| FSSTAT | 18 | Get filesystem statistics |
+| FSINFO | 19 | Get filesystem info |
+| PATHCONF | 20 | Get POSIX path config |
+| COMMIT | 21 | Commit cached data |
+
+## Fuzzing Targets
+
+Key areas for mutation:
+- **File handle length** - 0, 65, MAX_INT (bounds checking)
+- **Filenames** - Long strings, null bytes, path traversal (`../`)
+- **Offset/count fields** - Negative values, MAX_INT64 (integer overflow)
+- **Record mark length** - Mismatch with actual data (framing bugs)
+- **XID** - Reuse, max values (state confusion)
+
+## References
+
+- [RFC 1813 - NFS Version 3 Protocol](https://tools.ietf.org/html/rfc1813)
+- [RFC 5531 - RPC: Remote Procedure Call Protocol](https://tools.ietf.org/html/rfc5531)
+- [RFC 4506 - XDR: External Data Representation](https://tools.ietf.org/html/rfc4506)
+- [boofuzz documentation](https://boofuzz.readthedocs.io/)
+
+## Contributing
+
+Format code with Black before committing:
+
+```bash
+pip install black
+black request_definitions/ examples/
+```
+
+## Responsible Disclosure
+
+If you find vulnerabilities:
+- **nfs-ganesha**: security@nfs-ganesha.org
+- **Linux NFSD**: security@kernel.org
+
+## License
+
+MIT
